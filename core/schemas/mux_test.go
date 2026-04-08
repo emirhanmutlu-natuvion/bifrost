@@ -79,6 +79,162 @@ func TestToChatMessages_LeavesExistingSupportedRolesUnchanged(t *testing.T) {
 	}
 }
 
+func TestToChatMessages_AttachesResponsesReasoningSummaryToAssistantMessage(t *testing.T) {
+	reasoningType := ResponsesMessageTypeReasoning
+	messageType := ResponsesMessageTypeMessage
+	assistantRole := ResponsesInputMessageRoleAssistant
+
+	messages := []ResponsesMessage{
+		{
+			Type: &reasoningType,
+			ResponsesReasoning: &ResponsesReasoning{
+				Summary: []ResponsesReasoningSummary{
+					{
+						Type: ResponsesReasoningContentBlockTypeSummaryText,
+						Text: "First reasoning summary.",
+					},
+					{
+						Type: ResponsesReasoningContentBlockTypeSummaryText,
+						Text: "Second reasoning summary.",
+					},
+				},
+			},
+		},
+		{
+			Type: &messageType,
+			Role: &assistantRole,
+			Content: &ResponsesMessageContent{
+				ContentBlocks: []ResponsesMessageContentBlock{
+					{
+						Type: ResponsesOutputMessageContentTypeText,
+						Text: Ptr("Final answer"),
+					},
+				},
+			},
+		},
+	}
+
+	chatMessages := ToChatMessages(messages)
+	if len(chatMessages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(chatMessages))
+	}
+
+	msg := chatMessages[0]
+	if msg.Role != ChatMessageRoleAssistant {
+		t.Fatalf("expected assistant role, got %q", msg.Role)
+	}
+	if msg.ChatAssistantMessage == nil {
+		t.Fatal("expected assistant message payload")
+	}
+	if msg.ChatAssistantMessage.Reasoning == nil {
+		t.Fatal("expected reasoning summary to be attached")
+	}
+	expectedReasoning := "First reasoning summary.\n\nSecond reasoning summary."
+	if *msg.ChatAssistantMessage.Reasoning != expectedReasoning {
+		t.Fatalf("expected reasoning %q, got %q", expectedReasoning, *msg.ChatAssistantMessage.Reasoning)
+	}
+	if len(msg.ChatAssistantMessage.ReasoningDetails) != 2 {
+		t.Fatalf("expected 2 reasoning details, got %d", len(msg.ChatAssistantMessage.ReasoningDetails))
+	}
+	if msg.ChatAssistantMessage.ReasoningDetails[0].Type != BifrostReasoningDetailsTypeSummary {
+		t.Fatalf("expected summary reasoning detail type, got %q", msg.ChatAssistantMessage.ReasoningDetails[0].Type)
+	}
+	if msg.ChatAssistantMessage.ReasoningDetails[0].Index != 0 {
+		t.Fatalf("expected first reasoning detail index 0, got %d", msg.ChatAssistantMessage.ReasoningDetails[0].Index)
+	}
+	if msg.ChatAssistantMessage.ReasoningDetails[0].Summary == nil || *msg.ChatAssistantMessage.ReasoningDetails[0].Summary != "First reasoning summary." {
+		t.Fatalf("unexpected first reasoning detail: %#v", msg.ChatAssistantMessage.ReasoningDetails[0].Summary)
+	}
+	if msg.ChatAssistantMessage.ReasoningDetails[1].Index != 1 {
+		t.Fatalf("expected second reasoning detail index 1, got %d", msg.ChatAssistantMessage.ReasoningDetails[1].Index)
+	}
+}
+
+func TestToChatMessages_AttachesEmbeddedResponsesReasoningSummaryToAssistantMessage(t *testing.T) {
+	messageType := ResponsesMessageTypeMessage
+	assistantRole := ResponsesInputMessageRoleAssistant
+
+	messages := []ResponsesMessage{
+		{
+			Type: &messageType,
+			Role: &assistantRole,
+			ResponsesReasoning: &ResponsesReasoning{
+				Summary: []ResponsesReasoningSummary{
+					{
+						Type: ResponsesReasoningContentBlockTypeSummaryText,
+						Text: "Embedded reasoning summary.",
+					},
+				},
+			},
+			Content: &ResponsesMessageContent{
+				ContentBlocks: []ResponsesMessageContentBlock{
+					{
+						Type: ResponsesOutputMessageContentTypeText,
+						Text: Ptr("Final answer"),
+					},
+				},
+			},
+		},
+	}
+
+	chatMessages := ToChatMessages(messages)
+	if len(chatMessages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(chatMessages))
+	}
+	if chatMessages[0].ChatAssistantMessage == nil || chatMessages[0].ChatAssistantMessage.Reasoning == nil {
+		t.Fatal("expected embedded reasoning summary to be attached")
+	}
+	if *chatMessages[0].ChatAssistantMessage.Reasoning != "Embedded reasoning summary." {
+		t.Fatalf("unexpected reasoning: %q", *chatMessages[0].ChatAssistantMessage.Reasoning)
+	}
+}
+
+func TestBifrostResponsesResponseToChatResponse_AttachesReasoningSummaryToChoiceMessage(t *testing.T) {
+	reasoningType := ResponsesMessageTypeReasoning
+	messageType := ResponsesMessageTypeMessage
+	assistantRole := ResponsesInputMessageRoleAssistant
+
+	resp := &BifrostResponsesResponse{
+		Output: []ResponsesMessage{
+			{
+				Type: &reasoningType,
+				ResponsesReasoning: &ResponsesReasoning{
+					Summary: []ResponsesReasoningSummary{
+						{
+							Type: ResponsesReasoningContentBlockTypeSummaryText,
+							Text: "OpenAI reasoning summary.",
+						},
+					},
+				},
+			},
+			{
+				Type: &messageType,
+				Role: &assistantRole,
+				Content: &ResponsesMessageContent{
+					ContentBlocks: []ResponsesMessageContentBlock{
+						{
+							Type: ResponsesOutputMessageContentTypeText,
+							Text: Ptr("Final answer"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	chatResp := resp.ToBifrostChatResponse()
+	if chatResp == nil || len(chatResp.Choices) != 1 {
+		t.Fatalf("expected 1 chat choice, got %#v", chatResp)
+	}
+	msg := chatResp.Choices[0].Message
+	if msg == nil || msg.ChatAssistantMessage == nil || msg.ChatAssistantMessage.Reasoning == nil {
+		t.Fatal("expected reasoning summary on chat assistant message")
+	}
+	if *msg.ChatAssistantMessage.Reasoning != "OpenAI reasoning summary." {
+		t.Fatalf("unexpected reasoning: %q", *msg.ChatAssistantMessage.Reasoning)
+	}
+}
+
 func TestToChatRequest_FiltersUnsupportedResponsesToolsForFallback(t *testing.T) {
 	validName := "valid_tool"
 	invalidName := "  "

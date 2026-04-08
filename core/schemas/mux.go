@@ -641,9 +641,47 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 
 	var chatMessages []ChatMessage
 	var currentToolCalls []ChatAssistantMessageToolCall
+	var pendingReasoningSummary []string
+	var pendingReasoningDetails []ChatReasoningDetails
+
+	collectReasoning := func(reasoning *ResponsesReasoning) {
+		if reasoning == nil {
+			return
+		}
+		for _, summary := range reasoning.Summary {
+			summaryText := summary.Text
+			if summaryText == "" {
+				continue
+			}
+			pendingReasoningSummary = append(pendingReasoningSummary, summaryText)
+			pendingReasoningDetails = append(pendingReasoningDetails, ChatReasoningDetails{
+				Index:   len(pendingReasoningDetails),
+				Type:    BifrostReasoningDetailsTypeSummary,
+				Summary: &summaryText,
+			})
+		}
+	}
+
+	appendPendingReasoning := func(am *ChatAssistantMessage) {
+		if am == nil || (len(pendingReasoningSummary) == 0 && len(pendingReasoningDetails) == 0) {
+			return
+		}
+
+		if len(pendingReasoningSummary) > 0 {
+			reasoningText := strings.Join(pendingReasoningSummary, "\n\n")
+			am.Reasoning = &reasoningText
+		}
+		if len(pendingReasoningDetails) > 0 {
+			am.ReasoningDetails = append(am.ReasoningDetails, pendingReasoningDetails...)
+		}
+
+		pendingReasoningSummary = nil
+		pendingReasoningDetails = nil
+	}
 
 	for _, rm := range rms {
 		if rm.Type != nil && *rm.Type == ResponsesMessageTypeReasoning {
+			collectReasoning(rm.ResponsesReasoning)
 			continue
 		}
 
@@ -675,11 +713,13 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 		if len(currentToolCalls) > 0 {
 			// Create a copy of the slice to avoid shared slice header issues
 			toolCallsCopy := append([]ChatAssistantMessageToolCall(nil), currentToolCalls...)
+			assistantMessage := &ChatAssistantMessage{
+				ToolCalls: toolCallsCopy,
+			}
+			appendPendingReasoning(assistantMessage)
 			chatMessages = append(chatMessages, ChatMessage{
 				Role: ChatMessageRoleAssistant,
-				ChatAssistantMessage: &ChatAssistantMessage{
-					ToolCalls: toolCallsCopy,
-				},
+				ChatAssistantMessage: assistantMessage,
 			})
 			currentToolCalls = nil // Reset for next batch
 		}
@@ -818,6 +858,14 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 			}
 		}
 
+		if cm.Role == ChatMessageRoleAssistant {
+			if cm.ChatAssistantMessage == nil {
+				cm.ChatAssistantMessage = &ChatAssistantMessage{}
+			}
+			collectReasoning(rm.ResponsesReasoning)
+			appendPendingReasoning(cm.ChatAssistantMessage)
+		}
+
 		chatMessages = append(chatMessages, cm)
 	}
 
@@ -825,11 +873,13 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 	if len(currentToolCalls) > 0 {
 		// Create a copy of the slice to avoid shared slice header issues
 		toolCallsCopy := append([]ChatAssistantMessageToolCall(nil), currentToolCalls...)
+		assistantMessage := &ChatAssistantMessage{
+			ToolCalls: toolCallsCopy,
+		}
+		appendPendingReasoning(assistantMessage)
 		chatMessages = append(chatMessages, ChatMessage{
 			Role: ChatMessageRoleAssistant,
-			ChatAssistantMessage: &ChatAssistantMessage{
-				ToolCalls: toolCallsCopy,
-			},
+			ChatAssistantMessage: assistantMessage,
 		})
 	}
 
