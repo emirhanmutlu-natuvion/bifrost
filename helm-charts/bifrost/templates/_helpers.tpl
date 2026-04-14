@@ -624,6 +624,18 @@ false
 {{- if .Values.vectorStore.redis.external.contextTimeout }}
 {{- $_ := set $redisConfig "context_timeout" .Values.vectorStore.redis.external.contextTimeout }}
 {{- end }}
+{{- if .Values.vectorStore.redis.external.useTls }}
+{{- $_ := set $redisConfig "use_tls" true }}
+{{- end }}
+{{- if .Values.vectorStore.redis.external.insecureSkipVerify }}
+{{- $_ := set $redisConfig "insecure_skip_verify" true }}
+{{- end }}
+{{- if .Values.vectorStore.redis.external.caCertPem }}
+{{- $_ := set $redisConfig "ca_cert_pem" .Values.vectorStore.redis.external.caCertPem }}
+{{- end }}
+{{- if .Values.vectorStore.redis.external.clusterMode }}
+{{- $_ := set $redisConfig "cluster_mode" true }}
+{{- end }}
 {{- end }}
 {{- $_ := set $vectorStore "config" $redisConfig }}
 {{- else if eq .Values.vectorStore.type "qdrant" }}
@@ -685,17 +697,17 @@ false
 {{- if $client.headers }}
 {{- $_ := set $cc "headers" $client.headers }}
 {{- end }}
-{{- if $client.tools_to_execute }}
-{{- $_ := set $cc "tools_to_execute" $client.tools_to_execute }}
+{{- if $client.toolsToExecute }}
+{{- $_ := set $cc "tools_to_execute" $client.toolsToExecute }}
 {{- end }}
-{{- if $client.tools_to_auto_execute }}
-{{- $_ := set $cc "tools_to_auto_execute" $client.tools_to_auto_execute }}
+{{- if $client.toolsToAutoExecute }}
+{{- $_ := set $cc "tools_to_auto_execute" $client.toolsToAutoExecute }}
 {{- end }}
-{{- if $client.auth_type }}
-{{- $_ := set $cc "auth_type" $client.auth_type }}
+{{- if $client.authType }}
+{{- $_ := set $cc "auth_type" $client.authType }}
 {{- end }}
-{{- if $client.oauth_config_id }}
-{{- $_ := set $cc "oauth_config_id" $client.oauth_config_id }}
+{{- if $client.oauthConfigId }}
+{{- $_ := set $cc "oauth_config_id" $client.oauthConfigId }}
 {{- end }}
 {{- if hasKey $client "isPingAvailable" }}
 {{- $_ := set $cc "is_ping_available" $client.isPingAvailable }}
