@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,6 +32,19 @@ import (
 	schemas "github.com/maximhq/bifrost/core/schemas"
 	"github.com/valyala/fasthttp"
 )
+
+const (
+	bedrockStreamBufferSize         = 16
+	bedrockPayloadBufferInitialSize = 16 * 1024
+)
+
+func newBedrockStreamChannel() chan *schemas.BifrostStreamChunk {
+	return make(chan *schemas.BifrostStreamChunk, bedrockStreamBufferSize)
+}
+
+func newBedrockPayloadBuffer() []byte {
+	return make([]byte, 0, bedrockPayloadBufferInitialSize)
+}
 
 // BedrockProvider implements the Provider interface for AWS Bedrock.
 type BedrockProvider struct {
@@ -1028,7 +1042,7 @@ func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.BifrostContex
 	ctx.SetValue(schemas.BifrostContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
 
 	// Create response channel
-	responseChan := make(chan *schemas.BifrostStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := newBedrockStreamChannel()
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1055,7 +1069,7 @@ func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.BifrostContex
 
 		// Process AWS Event Stream format
 		decoder := eventstream.NewDecoder()
-		payloadBuf := make([]byte, 0, 1024*1024) // 1MB payload buffer
+		payloadBuf := newBedrockPayloadBuffer()
 
 		for {
 			// If context was cancelled/timed out, let defer handle it
@@ -1111,7 +1125,7 @@ func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.BifrostContex
 				var chunkPayload struct {
 					Bytes []byte `json:"bytes"`
 				}
-				if err := sonic.Unmarshal(message.Payload, &chunkPayload); err != nil {
+				if err := json.Unmarshal(message.Payload, &chunkPayload); err != nil {
 					provider.logger.Debug("Failed to parse JSON from event buffer: %v, data: %s", err, string(message.Payload))
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, err, responseChan, provider.logger, postHookSpanFinalizer)
 					return
@@ -1329,7 +1343,7 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.BifrostContex
 	ctx.SetValue(schemas.BifrostContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
 
 	// Create response channel
-	responseChan := make(chan *schemas.BifrostStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := newBedrockStreamChannel()
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 	// Start streaming in a goroutine
@@ -1383,7 +1397,7 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.BifrostContex
 		// Process AWS Event Stream format using proper decoder
 		lastChunkTime := startTime
 		decoder := eventstream.NewDecoder()
-		payloadBuf := make([]byte, 0, 1024*1024) // 1MB payload buffer
+		payloadBuf := newBedrockPayloadBuffer()
 
 		// Bedrock does not provide a unique identifier for the stream, so we generate one ourselves
 		id := uuid.New().String()
@@ -1450,7 +1464,7 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.BifrostContex
 
 				// Converse API path: parse Bedrock Converse-specific stream events
 				var streamEvent BedrockStreamEvent
-				if err := sonic.Unmarshal(message.Payload, &streamEvent); err != nil {
+				if err := json.Unmarshal(message.Payload, &streamEvent); err != nil {
 					provider.logger.Debug("Failed to parse JSON from event buffer: %v, data: %s", err, string(message.Payload))
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, err, responseChan, provider.logger, postHookSpanFinalizer)
 					return
@@ -1715,7 +1729,7 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.BifrostContext, po
 	ctx.SetValue(schemas.BifrostContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
 
 	// Create response channel
-	responseChan := make(chan *schemas.BifrostStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := newBedrockStreamChannel()
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1783,7 +1797,7 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.BifrostContext, po
 		// Process AWS Event Stream format using proper decoder
 		lastChunkTime := startTime
 		decoder := eventstream.NewDecoder()
-		payloadBuf := make([]byte, 0, 1024*1024) // 1MB payload buffer
+		payloadBuf := newBedrockPayloadBuffer()
 		for {
 			// If context was cancelled/timed out, let defer handle it
 			if ctx.Err() != nil {
@@ -1860,7 +1874,7 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.BifrostContext, po
 
 				// Converse API path: parse Bedrock Converse-specific stream events
 				var streamEvent BedrockStreamEvent
-				if err := sonic.Unmarshal(message.Payload, &streamEvent); err != nil {
+				if err := json.Unmarshal(message.Payload, &streamEvent); err != nil {
 					provider.logger.Debug("Failed to parse JSON from event buffer: %v, data: %s", err, string(message.Payload))
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, err, responseChan, provider.logger, postHookSpanFinalizer)
 					return

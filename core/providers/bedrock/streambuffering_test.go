@@ -31,6 +31,24 @@ func writeEventStreamEvent(t *testing.T, w io.Writer, eventType string, payload 
 		"failed to encode EventStream event frame")
 }
 
+func TestBedrockStreamBuffersAreBoundedAndPayloadCanGrow(t *testing.T) {
+	responseChan := newBedrockStreamChannel()
+	assert.Equal(t, bedrockStreamBufferSize, cap(responseChan))
+
+	payloadBuf := newBedrockPayloadBuffer()
+	assert.Empty(t, payloadBuf)
+	assert.Equal(t, bedrockPayloadBufferInitialSize, cap(payloadBuf))
+
+	payload := []byte(`{"delta":{"text":"` + strings.Repeat("x", bedrockPayloadBufferInitialSize*2) + `"}}`)
+	var encoded strings.Builder
+	writeEventStreamEvent(t, &encoded, "contentBlockDelta", payload)
+
+	message, err := eventstream.NewDecoder().Decode(strings.NewReader(encoded.String()), payloadBuf)
+	require.NoError(t, err)
+	assert.Equal(t, payload, message.Payload)
+	assert.Greater(t, cap(message.Payload), bedrockPayloadBufferInitialSize)
+}
+
 // TestChatCompletionStream_StreamsIncrementally_NotBuffered reproduces issue #4542:
 // streaming Bedrock responses arrive in a single end-of-stream burst instead of
 // incrementally, because Go's net/http transport auto-negotiates gzip and the
