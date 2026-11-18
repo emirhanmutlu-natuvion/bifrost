@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/maximhq/bifrost/core/providers/anthropic"
+	providerUtils "github.com/maximhq/bifrost/core/providers/utils"
 	"github.com/maximhq/bifrost/core/schemas"
 )
 
@@ -59,6 +61,18 @@ func ToBedrockChatCompletionRequest(ctx *schemas.BifrostContext, bifrostReq *sch
 	// Convert parameters and configurations
 	if err := convertChatParameters(ctx, bifrostReq, bedrockReq); err != nil {
 		return nil, fmt.Errorf("failed to convert chat parameters: %w", err)
+	}
+
+	// Claude needs max_tokens. Without one, Bedrock applies its own small default
+	// and cuts long outputs off, so send the model's max output, as the Anthropic
+	// provider does.
+	if schemas.IsAnthropicModelFamily(ctx, bifrostReq.Model) {
+		if bedrockReq.InferenceConfig == nil {
+			bedrockReq.InferenceConfig = &BedrockInferenceConfig{}
+		}
+		if bedrockReq.InferenceConfig.MaxTokens == nil {
+			bedrockReq.InferenceConfig.MaxTokens = schemas.Ptr(providerUtils.GetMaxOutputTokensOrDefault(bifrostReq.Model, anthropic.AnthropicDefaultMaxTokens))
+		}
 	}
 
 	// Ensure tool config is present when needed

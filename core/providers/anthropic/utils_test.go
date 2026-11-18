@@ -2584,12 +2584,16 @@ func TestSupportsAdaptiveThinking(t *testing.T) {
 		{"claude-sonnet-5", true},
 		{"claude-sonnet-5-20260101", true},
 		{"global.anthropic.claude-sonnet-5", true},
+		// Haiku 5+: adaptive is the only thinking-on mode.
+		{"claude-haiku-5-5", true},
+		{"eu.anthropic.claude-haiku-5-5", true},
 		// Fable/Mythos family: adaptive thinking is always on.
 		{"claude-fable-5", true},
 		{"claude-mythos-5", true},
 		{"claude-mythos-preview", true},
 		{"global.anthropic.claude-fable-5", true},
 		{"claude-opus-4-5-20241022", false},
+		{"claude-haiku-4-5-20251001", false},
 		{"claude-sonnet-4-5-20241022", false},
 		{"claude-haiku-4-6-20250514", false}, // haiku does not support adaptive
 		{"claude-haiku-4-7-20260401", false}, // haiku, not opus
@@ -2673,6 +2677,36 @@ func TestIsSonnet5Plus(t *testing.T) {
 	}
 }
 
+func TestIsHaiku5Plus(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"claude-haiku-5-5", true},
+		{"Claude-Haiku-5-5", true},
+		{"eu.anthropic.claude-haiku-5-5", true},
+		{"global.anthropic.claude-haiku-5-5", true},
+		{"anthropic.claude-haiku-5-5-v1:0", true},
+		{"claude-haiku-5-5@20261007", true},
+		// Must NOT match older Haikus or other families.
+		{"claude-haiku-4-5", false},
+		{"claude-haiku-4-5-20251001", false},
+		{"anthropic.claude-haiku-4-5-20251001-v1:0", false},
+		{"claude-sonnet-5", false},
+		{"claude-opus-5", false},
+		{"", false},
+		{"some-non-claude-model", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			if got := IsHaiku5Plus(tt.model); got != tt.expected {
+				t.Errorf("IsHaiku5Plus(%q) = %v, want %v", tt.model, got, tt.expected)
+			}
+		})
+	}
+}
+
 // TestIsOpus5Plus pins the Opus 5 predicate. Opus 5 shares Opus 4.8's request
 // surface (adaptive-only thinking, temperature/top_p/top_k removed, fast mode,
 // effort, mid-conversation system). The "opus-5" substring must NOT match
@@ -2727,6 +2761,9 @@ func TestIsAdaptiveOnlyThinkingModel(t *testing.T) {
 		{"claude-sonnet-5", true},
 		{"claude-sonnet-5-20260101", true},
 		{"global.anthropic.claude-sonnet-5", true},
+		// Haiku 5+.
+		{"claude-haiku-5-5", true},
+		{"eu.anthropic.claude-haiku-5-5", true},
 		// Fable/Mythos.
 		{"claude-fable-5", true},
 		{"claude-mythos-5", true},
@@ -2873,6 +2910,8 @@ func TestSupportsEffortParameter(t *testing.T) {
 		{"claude-sonnet-5", true},
 		{"claude-sonnet-5-20260101", true},
 		{"global.anthropic.claude-sonnet-5", true},
+		{"claude-haiku-5-5", true},
+		{"eu.anthropic.claude-haiku-5-5", true},
 		{"claude-opus-4-5", true},
 		{"claude-opus-4.5-20251101", true},
 		{"claude-opus-4-5-20251101", true},

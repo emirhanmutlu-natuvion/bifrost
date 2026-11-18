@@ -1264,6 +1264,52 @@ func TestToAnthropicChatRequest_NonOpus47_NoDefaultDisplay(t *testing.T) {
 	}
 }
 
+func TestToAnthropicChatRequest_DisplayOnly(t *testing.T) {
+	tests := []struct {
+		name          string
+		model         string
+		expectType    string
+		expectDisplay bool
+	}{
+		// No effort is sent, so the model keeps its own default effort.
+		{name: "Opus 5.5 is adaptive without effort", model: "claude-opus-5-5", expectType: "adaptive", expectDisplay: true},
+		{name: "Sonnet 4.6 is adaptive without effort", model: "claude-sonnet-4-6", expectType: "adaptive", expectDisplay: true},
+		{name: "Opus 4.5 stays disabled", model: "claude-opus-4-5-20251101", expectType: "disabled"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			display := "summarized"
+			bifrostReq := &schemas.BifrostChatRequest{
+				Provider: schemas.Anthropic,
+				Model:    tt.model,
+				Input: []schemas.ChatMessage{
+					{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: new("think")}},
+				},
+				Params: &schemas.ChatParameters{
+					Reasoning: &schemas.ChatReasoning{Display: &display},
+				},
+			}
+
+			ctx, cancel := schemas.NewBifrostContextWithCancel(context.Background())
+			defer cancel()
+			result, err := ToAnthropicChatRequest(ctx, bifrostReq)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.Thinking == nil || result.Thinking.Type != tt.expectType {
+				t.Fatalf("expected thinking type %q, got %+v", tt.expectType, result.Thinking)
+			}
+			if tt.expectDisplay && (result.Thinking.Display == nil || *result.Thinking.Display != display) {
+				t.Errorf("expected display %q, got %v", display, result.Thinking.Display)
+			}
+			if result.OutputConfig != nil && result.OutputConfig.Effort != nil {
+				t.Errorf("expected no effort, got %q", *result.OutputConfig.Effort)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Structured output (response_format: json_schema) round-trip tests
 // ---------------------------------------------------------------------------

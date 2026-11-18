@@ -314,3 +314,83 @@ func TestBuildBedrockTokenUsage_StreamMatchesNonStream(t *testing.T) {
 			streamEvent.Usage.CacheReadInputTokens, streamEvent.Usage.CacheWriteInputTokens)
 	}
 }
+
+// TestConvertToolMessages_CachePointAfterToolResults — a cache point on a tool
+// result goes after the last tool result of the message, never inside one:
+// Bedrock ignores a cache point in tool result content.
+func TestConvertToolMessages_CachePointAfterToolResults(t *testing.T) {
+	toolCall := func(id string) schemas.ChatAssistantMessageToolCall {
+		return schemas.ChatAssistantMessageToolCall{
+			Type: schemas.Ptr("function"),
+			ID:   schemas.Ptr(id),
+			Function: schemas.ChatAssistantMessageToolCallFunction{
+				Name:      schemas.Ptr("lookup"),
+				Arguments: `{"id":"1"}`,
+			},
+		}
+	}
+	toolResult := func(id, text string, cc *schemas.CacheControl) schemas.ChatMessage {
+		return schemas.ChatMessage{
+			Role:            schemas.ChatMessageRoleTool,
+			ChatToolMessage: &schemas.ChatToolMessage{ToolCallID: schemas.Ptr(id)},
+			Content: &schemas.ChatMessageContent{ContentBlocks: []schemas.ChatContentBlock{{
+				Type:         schemas.ChatContentBlockTypeText,
+				Text:         schemas.Ptr(text),
+				CacheControl: cc,
+			}}},
+		}
+	}
+	ephemeral := &schemas.CacheControl{Type: schemas.CacheControlTypeEphemeral}
+
+	cases := []struct {
+		name    string
+		results []schemas.ChatMessage
+	}{
+		{name: "marker on the last tool result", results: []schemas.ChatMessage{
+			toolResult("call_1", "first", nil), toolResult("call_2", "second", ephemeral),
+		}},
+		{name: "marker on an earlier tool result", results: []schemas.ChatMessage{
+			toolResult("call_1", "first", ephemeral), toolResult("call_2", "second", nil),
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := []schemas.ChatMessage{
+				{Role: schemas.ChatMessageRoleUser, Content: &schemas.ChatMessageContent{ContentStr: schemas.Ptr("go")}},
+				{
+					Role:                 schemas.ChatMessageRoleAssistant,
+					ChatAssistantMessage: &schemas.ChatAssistantMessage{ToolCalls: []schemas.ChatAssistantMessageToolCall{toolCall("call_1"), toolCall("call_2")}},
+				},
+			}
+			req := &schemas.BifrostChatRequest{
+				Provider: schemas.Bedrock,
+				Model:    "eu.anthropic.claude-sonnet-4-6",
+				Input:    append(input, tc.results...),
+			}
+
+			out, err := ToBedrockChatCompletionRequest(schemas.NewBifrostContext(t.Context(), schemas.NoDeadline), req)
+			if err != nil {
+				t.Fatalf("conversion failed: %v", err)
+			}
+
+			last := out.Messages[len(out.Messages)-1].Content
+			if len(last) != 3 {
+				t.Fatalf("expected [toolResult, toolResult, cachePoint], got %d blocks: %+v", len(last), last)
+			}
+			for i, block := range last[:2] {
+				if block.ToolResult == nil {
+					t.Fatalf("block %d: expected a tool result, got %+v", i, block)
+				}
+				for _, inner := range block.ToolResult.Content {
+					if inner.CachePoint != nil {
+						t.Errorf("block %d: cache point inside tool result content", i)
+					}
+				}
+			}
+			if last[2].CachePoint == nil {
+				t.Errorf("expected a cache point after the tool results, got %+v", last[2])
+			}
+		})
+	}
+}

@@ -385,7 +385,8 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 				},
 			},
 			expected: &bedrock.BedrockConverseRequest{
-				ModelID: "claude-3-sonnet",
+				ModelID:         "claude-3-sonnet",
+				InferenceConfig: &bedrock.BedrockInferenceConfig{MaxTokens: schemas.Ptr(4096)},
 				Messages: []bedrock.BedrockMessage{
 					{
 						Role: bedrock.BedrockMessageRoleUser,
@@ -424,7 +425,8 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 				},
 			},
 			expected: &bedrock.BedrockConverseRequest{
-				ModelID: "claude-3-sonnet",
+				ModelID:         "claude-3-sonnet",
+				InferenceConfig: &bedrock.BedrockInferenceConfig{MaxTokens: schemas.Ptr(4096)},
 				System: []bedrock.BedrockSystemMessage{
 					{
 						Text: schemas.Ptr("System message 1"),
@@ -512,7 +514,7 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 						},
 					},
 				},
-				InferenceConfig: &bedrock.BedrockInferenceConfig{},
+				InferenceConfig: &bedrock.BedrockInferenceConfig{MaxTokens: schemas.Ptr(4096)},
 				ServiceTier: &bedrock.BedrockServiceTier{
 					Type: bedrock.BedrockServiceTierTypePriority,
 				},
@@ -547,6 +549,7 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 					},
 				},
 				InferenceConfig: &bedrock.BedrockInferenceConfig{
+					MaxTokens:   schemas.Ptr(4096),
 					Temperature: &temp,
 				},
 			},
@@ -597,7 +600,7 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 						},
 					},
 				},
-				InferenceConfig: &bedrock.BedrockInferenceConfig{},
+				InferenceConfig: &bedrock.BedrockInferenceConfig{MaxTokens: schemas.Ptr(4096)},
 				ToolConfig: &bedrock.BedrockToolConfig{
 					Tools: []bedrock.BedrockTool{
 						{
@@ -666,7 +669,7 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 						},
 					},
 				},
-				InferenceConfig: &bedrock.BedrockInferenceConfig{},
+				InferenceConfig: &bedrock.BedrockInferenceConfig{MaxTokens: schemas.Ptr(4096)},
 				GuardrailConfig: &bedrock.BedrockGuardrailConfig{
 					GuardrailIdentifier: "test-guardrail",
 					GuardrailVersion:    "1",
@@ -749,7 +752,8 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 				},
 			},
 			expected: &bedrock.BedrockConverseRequest{
-				ModelID: "claude-3-sonnet",
+				ModelID:         "claude-3-sonnet",
+				InferenceConfig: &bedrock.BedrockInferenceConfig{MaxTokens: schemas.Ptr(4096)},
 				Messages: []bedrock.BedrockMessage{
 					{
 						Role: bedrock.BedrockMessageRoleUser,
@@ -851,8 +855,9 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 				Input: []schemas.ChatMessage{},
 			},
 			expected: &bedrock.BedrockConverseRequest{
-				ModelID:  "claude-3-sonnet",
-				Messages: nil,
+				ModelID:         "claude-3-sonnet",
+				InferenceConfig: &bedrock.BedrockInferenceConfig{MaxTokens: schemas.Ptr(4096)},
+				Messages:        nil,
 			},
 		},
 		{
@@ -965,7 +970,7 @@ func TestBifrostToBedrockRequestConversion(t *testing.T) {
 						},
 					},
 				},
-				InferenceConfig: &bedrock.BedrockInferenceConfig{},
+				InferenceConfig: &bedrock.BedrockInferenceConfig{MaxTokens: schemas.Ptr(4096)},
 				ToolConfig: &bedrock.BedrockToolConfig{
 					Tools: []bedrock.BedrockTool{
 						{
@@ -3408,7 +3413,10 @@ func TestAnthropicReasoningConfigUsesThinkingField(t *testing.T) {
 		model                    string
 		effort                   *string
 		maxTokens                *int
+		display                  *string
+		maxCompletionTokens      *int
 		expectedFieldName        string
+		expectDisplay            string
 		expectedType             string
 		expectBudgetTokens       bool
 		expectNoOutputConfig     bool
@@ -3423,6 +3431,19 @@ func TestAnthropicReasoningConfigUsesThinkingField(t *testing.T) {
 			expectBudgetTokens:       false,
 			expectNoOutputConfig:     false,
 			expectOutputConfigEffort: "high",
+		},
+		{
+			// A budget below the 1024 minimum would fail the conversion, so a
+			// small max_tokens proves Haiku 5.5 takes the adaptive path.
+			name:                     "Haiku5.5_AdaptiveThinking_SmallMaxTokens",
+			model:                    "eu.anthropic.claude-haiku-5-5",
+			effort:                   schemas.Ptr("low"),
+			maxCompletionTokens:      schemas.Ptr(256),
+			expectedFieldName:        "thinking",
+			expectedType:             "adaptive",
+			expectBudgetTokens:       false,
+			expectNoOutputConfig:     false,
+			expectOutputConfigEffort: "low",
 		},
 		{
 			name:                 "Opus4.5_NativeEffort_UsesThinkingField",
@@ -3452,6 +3473,33 @@ func TestAnthropicReasoningConfigUsesThinkingField(t *testing.T) {
 			expectNoOutputConfig: true,
 		},
 		{
+			// No effort is sent, so the model keeps its own default effort.
+			name:                 "Opus5.5_DisplayOnly_AdaptiveWithoutEffort",
+			model:                "eu.anthropic.claude-opus-5-5",
+			display:              schemas.Ptr("summarized"),
+			expectedFieldName:    "thinking",
+			expectedType:         "adaptive",
+			expectDisplay:        "summarized",
+			expectNoOutputConfig: true,
+		},
+		{
+			name:                 "Sonnet4.6_DisplayOnly_AdaptiveWithoutEffort",
+			model:                "anthropic.claude-sonnet-4-6",
+			display:              schemas.Ptr("omitted"),
+			expectedFieldName:    "thinking",
+			expectedType:         "adaptive",
+			expectDisplay:        "omitted",
+			expectNoOutputConfig: true,
+		},
+		{
+			name:                 "Opus4.5_DisplayOnly_StaysDisabled",
+			model:                "anthropic.claude-opus-4-5-v1",
+			display:              schemas.Ptr("summarized"),
+			expectedFieldName:    "thinking",
+			expectedType:         "disabled",
+			expectNoOutputConfig: true,
+		},
+		{
 			name:                 "Anthropic_DisabledReasoning_UsesThinkingField",
 			model:                "anthropic.claude-3-7-sonnet-v1",
 			effort:               schemas.Ptr("none"),
@@ -3471,6 +3519,7 @@ func TestAnthropicReasoningConfigUsesThinkingField(t *testing.T) {
 			if tt.maxTokens != nil {
 				reasoning.MaxTokens = tt.maxTokens
 			}
+			reasoning.Display = tt.display
 
 			bifrostReq := &schemas.BifrostChatRequest{
 				Model: tt.model,
@@ -3483,7 +3532,8 @@ func TestAnthropicReasoningConfigUsesThinkingField(t *testing.T) {
 					},
 				},
 				Params: &schemas.ChatParameters{
-					Reasoning: reasoning,
+					Reasoning:           reasoning,
+					MaxCompletionTokens: tt.maxCompletionTokens,
 				},
 			}
 
@@ -3523,6 +3573,9 @@ func TestAnthropicReasoningConfigUsesThinkingField(t *testing.T) {
 				if tt.expectBudgetTokens {
 					_, hasBudget := configMap["budget_tokens"]
 					assert.True(t, hasBudget, "expected budget_tokens in thinking config")
+				}
+				if tt.expectDisplay != "" {
+					assert.Equal(t, tt.expectDisplay, configMap["display"])
 				}
 			} else if configMap, ok := thinkingConfig.(map[string]string); ok {
 				assert.Equal(t, tt.expectedType, configMap["type"])

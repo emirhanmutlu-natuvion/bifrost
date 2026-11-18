@@ -853,14 +853,23 @@ func IsSonnet5Plus(model string) bool {
 	return strings.Contains(strings.ToLower(model), "sonnet-5")
 }
 
+// IsHaiku5Plus returns true for Claude Haiku 5 (and later Haiku 5.x). Haiku 5.5
+// adopts the Sonnet 5+ request surface: budget_tokens is removed, non-default
+// temperature/top_p/top_k are rejected with a 400, adaptive thinking is on by
+// default and effort accepts low through max. Matching "haiku-5" excludes
+// "haiku-4-5" and matches Bedrock/Vertex/date-suffixed forms.
+func IsHaiku5Plus(model string) bool {
+	return strings.Contains(strings.ToLower(model), "haiku-5")
+}
+
 // IsAdaptiveOnlyThinkingModel returns true for models where budget_tokens
 // extended thinking is removed (adaptive is the only thinking-on mode) and
 // temperature/top_p/top_k are rejected with a 400. Covers Opus 4.7+, Sonnet 5+,
-// and the Fable/Mythos family. Use this — not IsOpus47Plus — for the thinking and
-// sampling-parameter gates so Fable is handled correctly. (Fast mode is gated
-// on IsOpus47Plus instead, since Fable does not support speed:"fast".)
+// Haiku 5+, and the Fable/Mythos family. Use this — not IsOpus47Plus — for the
+// thinking and sampling-parameter gates so Fable is handled correctly. (Fast mode
+// is gated on IsOpus47Plus instead, since Fable does not support speed:"fast".)
 func IsAdaptiveOnlyThinkingModel(model string) bool {
-	return IsOpus47Plus(model) || IsSonnet5Plus(model) || IsFableFamily(model)
+	return IsOpus47Plus(model) || IsSonnet5Plus(model) || IsHaiku5Plus(model) || IsFableFamily(model)
 }
 
 // SupportsNativeEffort returns true if the model supports Anthropic's native output_config.effort parameter.
@@ -877,7 +886,7 @@ func SupportsNativeEffort(model string) bool {
 // SupportsEffortParameter returns true if the model accepts the
 // output_config.effort parameter. Supported models: Claude Fable 5,
 // Claude Mythos 5, Claude Mythos Preview, Opus 5, Opus 4.8, Opus 4.7, Opus 4.6,
-// Sonnet 5, Sonnet 4.6, and Opus 4.5. All other models reject effort with a 400:
+// Sonnet 5, Sonnet 4.6, Haiku 5+, and Opus 4.5. All other models reject effort with a 400:
 //
 //	"This model does not support the effort parameter."
 //
@@ -889,7 +898,7 @@ func SupportsNativeEffort(model string) bool {
 // Source: https://platform.claude.com/docs/en/build-with-claude/effort
 func SupportsEffortParameter(model string) bool {
 	m := strings.ToLower(model)
-	if IsFableFamily(m) || IsSonnet5Plus(m) || IsOpus5Plus(m) {
+	if IsFableFamily(m) || IsSonnet5Plus(m) || IsHaiku5Plus(m) || IsOpus5Plus(m) {
 		return true
 	}
 	if strings.Contains(m, "haiku") {
@@ -969,12 +978,13 @@ func SupportsFastMode(model string) bool {
 
 // SupportsAdaptiveThinking returns true if the model supports thinking.type: "adaptive".
 // Currently supported on Claude Opus 4.6, Claude Sonnet 4.6, Claude Sonnet 5+, Claude
-// Opus 4.7+, and the Claude Fable/Mythos family. On Opus 4.7+, Sonnet 5+, and
-// Fable/Mythos adaptive is the only thinking-on mode; on Opus 4.6 and Sonnet 4.6 it
-// coexists with the deprecated budget_tokens-based extended thinking. On Fable/Mythos
-// adaptive is always on and thinking:{type:"disabled"} is rejected (see IsFableFamily).
+// Haiku 5+, Claude Opus 4.7+, and the Claude Fable/Mythos family. On Opus 4.7+,
+// Sonnet 5+, Haiku 5+, and Fable/Mythos adaptive is the only thinking-on mode; on
+// Opus 4.6 and Sonnet 4.6 it coexists with the deprecated budget_tokens-based extended
+// thinking. On Fable/Mythos adaptive is always on and thinking:{type:"disabled"} is
+// rejected (see IsFableFamily).
 func SupportsAdaptiveThinking(model string) bool {
-	if IsOpus47Plus(model) || IsSonnet5Plus(model) || IsFableFamily(model) {
+	if IsOpus47Plus(model) || IsSonnet5Plus(model) || IsHaiku5Plus(model) || IsFableFamily(model) {
 		return true
 	}
 	model = strings.ToLower(model)

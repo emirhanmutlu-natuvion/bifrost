@@ -282,6 +282,13 @@ func ToAnthropicChatRequest(ctx *schemas.BifrostContext, bifrostReq *schemas.Bif
 
 	// capModel is the canonical model string used only for capability/version
 	capModel := schemas.ResolveCanonicalModel(ctx, bifrostReq.Model)
+	// Display without an effort or a budget turns adaptive thinking on, and the model
+	// keeps its own default effort.
+	displayOnlyThinking := bifrostReq.Params != nil && bifrostReq.Params.Reasoning != nil &&
+		bifrostReq.Params.Reasoning.Display != nil &&
+		bifrostReq.Params.Reasoning.Effort == nil &&
+		bifrostReq.Params.Reasoning.MaxTokens == nil &&
+		SupportsAdaptiveThinking(capModel)
 
 	// Convert parameters
 	if bifrostReq.Params != nil {
@@ -490,7 +497,7 @@ func ToAnthropicChatRequest(ctx *schemas.BifrostContext, bifrostReq *schemas.Bif
 					anthropicReq.Tools = append(anthropicReq.Tools, *responseFormatTool)
 					// Anthropic rejects forced tool_choice when extended thinking is active.
 					// Skip forcing tool_choice in that case; the model may still call the tool.
-					thinkingEnabled := bifrostReq.Params.Reasoning != nil &&
+					thinkingEnabled := displayOnlyThinking || bifrostReq.Params.Reasoning != nil &&
 						(bifrostReq.Params.Reasoning.MaxTokens != nil ||
 							(bifrostReq.Params.Reasoning.Effort != nil && *bifrostReq.Params.Reasoning.Effort != "none"))
 					if !thinkingEnabled {
@@ -626,6 +633,8 @@ func ToAnthropicChatRequest(ctx *schemas.BifrostContext, bifrostReq *schemas.Bif
 						BudgetTokens: schemas.Ptr(budgetTokens),
 					}
 				}
+			} else if displayOnlyThinking {
+				anthropicReq.Thinking = &AnthropicThinking{Type: "adaptive"}
 			} else if !IsFableFamily(capModel) {
 				// Fable/Mythos reject thinking:{type:"disabled"} with a 400 —
 				// adaptive thinking is always on and cannot be disabled. Omit
